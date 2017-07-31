@@ -10,6 +10,7 @@ use runtime::value::Value;
 use runtime::glue::Glue;
 use runtime::control_command::ControlCommand;
 use runtime::divert::{Divert, PushPopType, TargetType};
+use runtime::choice_point::ChoicePoint;
 use path::Path;
 
 use serde::de::Error as SerdeError;
@@ -260,7 +261,6 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                             _ => return Err(SerdeError::custom("Cannot parse target path"))
                         }
 
-                        //let entry: Option<(&str, u32)> = try!(map.next_entry());
                         // Case {"x()": "externalFuncName", "exArgs": 5}
                         if let Some(("exArgs", external_args)) = try!(map.next_entry()) {
                             divert.set_external_args(external_args);
@@ -277,7 +277,25 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                 }
             }
             // Choice
-            Some(("*", value)) => { Err(SerdeError::custom("TODO")) },
+            Some(("*", value)) => {
+                match value {
+                    InkDictionaryContent::String(target) => {
+                        let mut choice = ChoicePoint::new();
+
+                        match Path::parse(&target) {
+                            Some(path) => choice.set_path_on_choice(path),
+                            _ => return Err(SerdeError::custom("Cannot parse choice path"))
+                        }
+
+                        if let Some(("flg", flags)) = try!(map.next_entry()) {
+                            choice.set_flags(flags);
+                        }
+
+                        Ok(RuntimeObject::ChoicePoint(choice))
+                    },
+                    _  => Err(SerdeError::custom("Unexpected choice path type"))
+                }
+            },
 
             // Variable reference
             Some(("VAR?", value)) => { Err(SerdeError::custom("TODO")) },
@@ -594,6 +612,23 @@ mod tests {
         match runtime_object {
             RuntimeObject::Divert(divert) => {
                 assert_eq!(divert.is_conditional(), true);
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn choice_test() {
+        let json = "{\"*\":\".^.c\",\"flg\":18}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::ChoicePoint(choice) => {
+                assert_eq!(choice.path_on_choice().unwrap().to_string(), ".^.c");
+                assert_eq!(choice.has_condition(), false);
+                assert_eq!(choice.has_start_content(), true);
+                assert_eq!(choice.has_choice_only_content(), false);
+                assert_eq!(choice.is_invisible_default(), false);
+                assert_eq!(choice.once_only(), true);
             },
             _ => assert!(false)
         }
