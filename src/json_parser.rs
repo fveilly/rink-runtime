@@ -12,6 +12,7 @@ use runtime::control_command::ControlCommand;
 use runtime::divert::{Divert, PushPopType, TargetType};
 use runtime::choice_point::ChoicePoint;
 use runtime::variable::{VariableAssignment, VariableReference, ReadCount};
+use runtime::tag::Tag;
 use path::Path;
 
 use serde::de::Error as SerdeError;
@@ -342,11 +343,28 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                 }
             },
 
+            // Tag
+            Some(("#", value)) => {
+                match value {
+                    InkDictionaryContent::String(tag) => {
+                        Ok(RuntimeObject::Tag(Tag::new(tag)))
+                    },
+                    _  => Err(SerdeError::custom("Unexpected temp var name type"))
+                }
+            },
+
             // List
             Some(("list", value)) => { Err(SerdeError::custom("TODO")) },
 
             _ => { Err(SerdeError::custom("TODO")) }
         }
+    }
+
+    fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
+        where
+            V: SeqAccess<'de>,
+    {
+        Err(SerdeError::custom("TODO"))
     }
 }
 
@@ -732,6 +750,18 @@ mod tests {
                 assert_eq!(variable.name(), "x");
                 assert_eq!(variable.is_new_declaration(), true);
                 assert_eq!(variable.is_global(), false);
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn tag_test() {
+        let json = "{\"#\": \"This is a tag\"}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::Tag(tag) => {
+                assert_eq!(tag.text(), "This is a tag");
             },
             _ => assert!(false)
         }
