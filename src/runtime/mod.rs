@@ -8,7 +8,7 @@ pub mod native_function_call;
 pub mod story;
 pub mod tag;
 pub mod value;
-pub mod variable_assignment;
+pub mod variable;
 
 use std::fmt;
 
@@ -22,7 +22,7 @@ use runtime::native_function_call::NativeFunctionCall;
 use runtime::story::Story;
 use runtime::tag::Tag;
 use runtime::value::Value;
-use runtime::variable_assignment::VariableAssignment;
+use runtime::variable::{VariableAssignment, VariableReference, ReadCount};
 
 use debug_metadata::DebugMetadata;
 use path::Path;
@@ -39,6 +39,8 @@ pub enum RuntimeObject {
     Tag(Tag),
     Value(Value),
     VariableAssignment(VariableAssignment),
+    VariableReference(VariableReference),
+    ReadCount(ReadCount),
     Void
 }
 

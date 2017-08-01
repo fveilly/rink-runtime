@@ -11,6 +11,7 @@ use runtime::glue::Glue;
 use runtime::control_command::ControlCommand;
 use runtime::divert::{Divert, PushPopType, TargetType};
 use runtime::choice_point::ChoicePoint;
+use runtime::variable::{VariableAssignment, VariableReference, ReadCount};
 use path::Path;
 
 use serde::de::Error as SerdeError;
@@ -298,12 +299,48 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
             },
 
             // Variable reference
-            Some(("VAR?", value)) => { Err(SerdeError::custom("TODO")) },
-            Some(("CNT?", value)) => { Err(SerdeError::custom("TODO")) },
+            Some(("VAR?", value)) => {
+                match value {
+                    InkDictionaryContent::String(name) => {
+                        Ok(RuntimeObject::VariableReference(VariableReference::new(name)))
+                    },
+                    _  => Err(SerdeError::custom("Unexpected var name type"))
+                }
+            },
+            // Read Count
+            Some(("CNT?", value)) => {
+                match value {
+                    InkDictionaryContent::String(target) => {
+                        match Path::parse(&target) {
+                            Some(path) => Ok(RuntimeObject::ReadCount(ReadCount::new(path))),
+                            _ => return Err(SerdeError::custom("Cannot parse read count target"))
+                        }
+                    },
+                    _  => Err(SerdeError::custom("Unexpected var path type"))
+                }
+            },
 
             // Variable assignment
-            Some(("VAR=", value)) => { Err(SerdeError::custom("TODO")) },
-            Some(("temp=", value)) => { Err(SerdeError::custom("TODO")) },
+            Some(("VAR=", value)) => {
+                match value {
+                    InkDictionaryContent::String(name) => {
+                        if let Some(("re", re)) = try!(map.next_entry()) as Option<(&str, bool)> {
+                            return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, !re, true)))
+                        }
+
+                        Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, true, true)))
+                    },
+                    _  => Err(SerdeError::custom("Unexpected var name type"))
+                }
+            },
+            Some(("temp=", value)) => {
+                match value {
+                    InkDictionaryContent::String(name) => {
+                        Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, true, false)))
+                    },
+                    _  => Err(SerdeError::custom("Unexpected temp var name type"))
+                }
+            },
 
             // List
             Some(("list", value)) => { Err(SerdeError::custom("TODO")) },
@@ -629,6 +666,72 @@ mod tests {
                 assert_eq!(choice.has_choice_only_content(), false);
                 assert_eq!(choice.is_invisible_default(), false);
                 assert_eq!(choice.once_only(), true);
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn variable_reference_test() {
+        let json = "{\"VAR?\": \"danger\"}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::VariableReference(variable) => {
+                assert_eq!(variable.name(), "danger");
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn read_count_test() {
+        let json = "{\"CNT?\": \"the_hall.light_switch\"}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::ReadCount(variable) => {
+                assert_eq!(variable.target().to_string(), "the_hall.light_switch");
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn variable_assignment_test() {
+        let json = "{\"VAR=\": \"money\"}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::VariableAssignment(variable) => {
+                assert_eq!(variable.name(), "money");
+                assert_eq!(variable.is_new_declaration(), true);
+                assert_eq!(variable.is_global(), true);
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn variable_assignment_redeclared_test() {
+        let json = "{\"VAR=\": \"money\", \"re\": true}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::VariableAssignment(variable) => {
+                assert_eq!(variable.name(), "money");
+                assert_eq!(variable.is_new_declaration(), false);
+                assert_eq!(variable.is_global(), true);
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn temporary_variable_assignment_test() {
+        let json = "{\"temp=\": \"x\"}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::VariableAssignment(variable) => {
+                assert_eq!(variable.name(), "x");
+                assert_eq!(variable.is_new_declaration(), true);
+                assert_eq!(variable.is_global(), false);
             },
             _ => assert!(false)
         }
