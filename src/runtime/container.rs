@@ -11,6 +11,26 @@ pub struct Container {
 }
 
 impl Container {
+    pub fn new() -> Container {
+        Container {
+            content: Vec::new(),
+            name: None,
+            visits_should_be_counted: false,
+            turn_index_should_be_counted: false,
+            count_at_start_only: false
+        }
+    }
+
+    pub fn fromRuntimeObjectVec(content: Vec<RuntimeObject>) -> Container {
+        Container {
+            content: content,
+            name: None,
+            visits_should_be_counted: false,
+            turn_index_should_be_counted: false,
+            count_at_start_only: false
+        }
+    }
+
     pub fn content(&self) -> &Vec<RuntimeObject> {
         &self.content
     }
@@ -37,6 +57,15 @@ impl Container {
 
     pub fn set_count_at_start_only(&mut self, flag: bool) {
         self.count_at_start_only = flag;
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_ref().map(|x| x.as_ref())
+    }
+
+    pub fn set_name(&mut self, name: String)
+    {
+        self.name = Some(name);
     }
 
     pub fn count_flags(&self) -> u8 {
@@ -79,12 +108,21 @@ impl Container {
         self.content.push(obj);
     }
 
+    pub fn append(&mut self, mut objects: Vec<RuntimeObject>) {
+        self.content.append(&mut objects);
+    }
+
+    pub fn prepend(&mut self, mut objects: Vec<RuntimeObject>) {
+        objects.append(&mut self.content);
+        self.content = objects;
+    }
+
     pub fn get_content_from_path_component(&self, component: &PathComponent)-> Option<&RuntimeObject> {
         match component {
             &PathComponent::Index(ref index_component) => {
                 let index = index_component.index();
 
-                if index >= 0 && index < self.content.len()  {
+                if index < self.content.len()  {
                     self.content.get(index)
                 } else {
                     None

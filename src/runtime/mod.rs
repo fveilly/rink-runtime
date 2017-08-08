@@ -41,7 +41,8 @@ pub enum RuntimeObject {
     VariableAssignment(VariableAssignment),
     VariableReference(VariableReference),
     ReadCount(ReadCount),
-    Void
+    Void,
+    Null
 }
 
 impl fmt::Display for RuntimeObject {

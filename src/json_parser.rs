@@ -13,6 +13,7 @@ use runtime::divert::{Divert, PushPopType, TargetType};
 use runtime::choice_point::ChoicePoint;
 use runtime::variable::{VariableAssignment, VariableReference, ReadCount};
 use runtime::tag::Tag;
+use runtime::container::Container;
 use path::Path;
 
 use serde::de::Error as SerdeError;
@@ -21,10 +22,10 @@ use serde::de::{Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum InkDictionaryContent {
-    Container(Vec<RuntimeObject>),
     String(String),
     Integer(u32),
-    Bool(bool)
+    Bool(bool),
+    RuntimeObject(RuntimeObject)
 }
 
 struct RuntimeObjectVisitor {
@@ -168,203 +169,285 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
         where
             A: MapAccess<'de>,
     {
-        let entry: Option<(&str, InkDictionaryContent)> = try!(map.next_entry());
-        match entry {
-            // Divert target value to path
-            Some(("^->", value)) => { Err(SerdeError::custom("TODO")) },
+        let mut opt_container: Option<Container> = None;
 
-            // VariablePointerValue
-            Some(("^var", value)) => { Err(SerdeError::custom("TODO")) },
+        while let Some((key, value)) = map.next_entry()? as Option<(&str, InkDictionaryContent)> {
+            match key {
+                // Divert target value to path
+                "^->" => { return Err(SerdeError::custom("TODO")) },
 
-            // Divert
-            Some(("->", value)) => {
-                match value {
-                    InkDictionaryContent::String(target) => {
-                        let mut divert = Divert::new();
+                // VariablePointerValue
+                "^var" => { return Err(SerdeError::custom("TODO")) },
 
-                        let entry: Option<(&str, bool)> = try!(map.next_entry());
-                        match entry {
-                            // Case {"->": "variableTarget", "var": true}
-                            Some(("var", true)) => {
-                                divert.set_target(TargetType::Name(target));
+                // Divert
+                "->" => {
+                    match value {
+                        InkDictionaryContent::String(target) => {
+                            let mut divert = Divert::new();
 
-                                // Case {"->": "variableTarget", "var": true, "c": true}
-                                if let Some(("c", true)) = try!(map.next_entry()) {
-                                    divert.set_is_conditional(true);
-                                }
-                            },
-                            _ => {
-                                match Path::parse(&target) {
-                                    Some(path) => divert.set_target(TargetType::Path(path)),
-                                    _ => return Err(SerdeError::custom("Cannot parse target path"))
-                                }
+                            let entry: Option<(&str, bool)> = map.next_entry()?;
+                            match entry {
+                                // Case {"->": "variableTarget", "var": true}
+                                Some(("var", true)) => {
+                                    divert.set_target(TargetType::Name(target));
 
-                                // Case {"->": "variableTarget", "c": true}
-                                if let Some(("c", true)) = entry {
-                                    divert.set_is_conditional(true);
+                                    // Case {"->": "variableTarget", "var": true, "c": true}
+                                    if let Some(("c", true)) = map.next_entry()? {
+                                        divert.set_is_conditional(true);
+                                    }
+                                },
+                                _ => {
+                                    match Path::parse(&target) {
+                                        Some(path) => divert.set_target(TargetType::Path(path)),
+                                        _ => return Err(SerdeError::custom("Cannot parse target path"))
+                                    }
+
+                                    // Case {"->": "variableTarget", "c": true}
+                                    if let Some(("c", true)) = entry {
+                                        divert.set_is_conditional(true);
+                                    }
                                 }
                             }
-                        }
-                        Ok(RuntimeObject::Divert(divert))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected divert target type"))
+                            return Ok(RuntimeObject::Divert(divert))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected divert target type"))
+                    }
+                },
+                // Function Call
+                "f()" => {
+                    match value {
+                        InkDictionaryContent::String(target) => {
+                            let mut divert = Divert::new_function();
+
+                            match Path::parse(&target) {
+                                Some(path) => divert.set_target(TargetType::Path(path)),
+                                _ => return Err(SerdeError::custom("Cannot parse target path"))
+                            }
+
+                            // Case {"f()": "path.to.func", "c": true}
+                            if let Some(("c", true)) = map.next_entry()? {
+                                divert.set_is_conditional(true);
+                            }
+
+                            return Ok(RuntimeObject::Divert(divert))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected divert target type"))
+                    }
+                },
+                // Tunnel
+                "->t->" => {
+                    match value {
+                        InkDictionaryContent::String(target) => {
+                            let mut divert = Divert::new_tunnel();
+
+                            match Path::parse(&target) {
+                                Some(path) => divert.set_target(TargetType::Path(path)),
+                                _ => return Err(SerdeError::custom("Cannot parse target path"))
+                            }
+
+                            // Case {"->t->": "path.tunnel", "c": true}
+                            if let Some(("c", true)) = map.next_entry()? {
+                                divert.set_is_conditional(true);
+                            }
+
+                            return Ok(RuntimeObject::Divert(divert))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected divert target type"))
+                    }
+                },
+                // External function
+                "x()" => {
+                    match value {
+                        InkDictionaryContent::String(target) => {
+                            let mut divert = Divert::new_external_function();
+
+                            match Path::parse(&target) {
+                                Some(path) => divert.set_target(TargetType::Path(path)),
+                                _ => return Err(SerdeError::custom("Cannot parse target path"))
+                            }
+
+                            // Case {"x()": "externalFuncName", "exArgs": 5}
+                            if let Some(("exArgs", external_args)) = map.next_entry()? {
+                                divert.set_external_args(external_args);
+                            }
+
+                            // Case {"x()": "externalFuncName", "exArgs": 5, "c": true}
+                            if let Some(("c", true)) = map.next_entry()? {
+                                divert.set_is_conditional(true);
+                            }
+
+                            return Ok(RuntimeObject::Divert(divert))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected divert target type"))
+                    }
                 }
-            },
-            // Function Call
-            Some(("f()", value)) => {
-                match value {
-                    InkDictionaryContent::String(target) => {
-                        let mut divert = Divert::new_function();
+                // Choice
+                "*" => {
+                    match value {
+                        InkDictionaryContent::String(target) => {
+                            let mut choice = ChoicePoint::new();
 
-                        match Path::parse(&target) {
-                            Some(path) => divert.set_target(TargetType::Path(path)),
-                            _ => return Err(SerdeError::custom("Cannot parse target path"))
-                        }
+                            match Path::parse(&target) {
+                                Some(path) => choice.set_path_on_choice(path),
+                                _ => return Err(SerdeError::custom("Cannot parse choice path"))
+                            }
 
-                        // Case {"f()": "path.to.func", "c": true}
-                        if let Some(("c", true)) = try!(map.next_entry()) {
-                            divert.set_is_conditional(true);
-                        }
+                            if let Some(("flg", flags)) = map.next_entry()? {
+                                choice.set_flags(flags);
+                            }
 
-                        Ok(RuntimeObject::Divert(divert))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected divert target type"))
-                }
-            },
-            // Tunnel
-            Some(("->t->", value)) => {
-                match value {
-                    InkDictionaryContent::String(target) => {
-                        let mut divert = Divert::new_tunnel();
+                            return Ok(RuntimeObject::ChoicePoint(choice))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected choice path type"))
+                    }
+                },
 
-                        match Path::parse(&target) {
-                            Some(path) => divert.set_target(TargetType::Path(path)),
-                            _ => return Err(SerdeError::custom("Cannot parse target path"))
-                        }
+                // Variable reference
+                "VAR?" => {
+                    match value {
+                        InkDictionaryContent::String(name) => {
+                            return Ok(RuntimeObject::VariableReference(VariableReference::new(name)))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected var name type"))
+                    }
+                },
+                // Read Count
+                "CNT?" => {
+                    match value {
+                        InkDictionaryContent::String(target) => {
+                            match Path::parse(&target) {
+                                Some(path) => return Ok(RuntimeObject::ReadCount(ReadCount::new(path))),
+                                _ => return Err(SerdeError::custom("Cannot parse read count target"))
+                            }
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected var path type"))
+                    }
+                },
 
-                        // Case {"->t->": "path.tunnel", "c": true}
-                        if let Some(("c", true)) = try!(map.next_entry()) {
-                            divert.set_is_conditional(true);
-                        }
+                // Variable assignment
+                "VAR=" => {
+                    match value {
+                        InkDictionaryContent::String(name) => {
+                            if let Some(("re", re)) = map.next_entry()? as Option<(&str, bool)> {
+                                return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, !re, true)))
+                            }
 
-                        Ok(RuntimeObject::Divert(divert))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected divert target type"))
-                }
-            },
-            // External function
-            Some(("x()", value)) => {
-                match value {
-                    InkDictionaryContent::String(target) => {
-                        let mut divert = Divert::new_external_function();
+                            return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, true, true)))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected var name type"))
+                    }
+                },
+                "temp=" => {
+                    match value {
+                        InkDictionaryContent::String(name) => {
+                            return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, true, false)))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected temp var name type"))
+                    }
+                },
 
-                        match Path::parse(&target) {
-                            Some(path) => divert.set_target(TargetType::Path(path)),
-                            _ => return Err(SerdeError::custom("Cannot parse target path"))
-                        }
+                // Tag
+                "#" => {
+                    match value {
+                        InkDictionaryContent::String(tag) => {
+                            return Ok(RuntimeObject::Tag(Tag::new(tag)))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected temp var name type"))
+                    }
+                },
 
-                        // Case {"x()": "externalFuncName", "exArgs": 5}
-                        if let Some(("exArgs", external_args)) = try!(map.next_entry()) {
-                            divert.set_external_args(external_args);
-                        }
+                // List
+                "list" => { return Err(SerdeError::custom("TODO")) },
 
-                        // Case {"x()": "externalFuncName", "exArgs": 5, "c": true}
-                        if let Some(("c", true)) = try!(map.next_entry()) {
-                            divert.set_is_conditional(true);
-                        }
+                // Container
+                "#n" => {
+                    match value {
+                        InkDictionaryContent::String(name) => {
+                            if opt_container.is_none() {
+                                opt_container = Some(Container::new());
+                            }
 
-                        Ok(RuntimeObject::Divert(divert))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected divert target type"))
-                }
+                            if let Some(ref mut container_ref) = opt_container.as_mut() {
+                                container_ref.set_name(name);
+                            }
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected container name type"))
+                    }
+                },
+                "#f" => {
+                    match value {
+                        InkDictionaryContent::Integer(flags) => {
+                            if opt_container.is_none() {
+                                opt_container = Some(Container::new());
+                            }
+
+                            if let Some(ref mut container_ref) = opt_container.as_mut() {
+                                container_ref.set_count_flags(flags as u8);
+                            }
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected container name type"))
+                    }
+                },
+                key => {
+                    match value {
+                        InkDictionaryContent::RuntimeObject(obj) => {
+                            if let RuntimeObject::Container(mut sub_container) = obj
+                                {
+                                    if opt_container.is_none() {
+                                        opt_container = Some(Container::new());
+                                    }
+
+                                    sub_container.set_name(key.to_owned());
+
+                                    if let Some(ref mut container_ref) = opt_container.as_mut() {
+                                        container_ref.add_child(RuntimeObject::Container(sub_container));
+                                    }
+                                }
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected container name type"))
+                    }
+                },
+
+                _ => { return Err(SerdeError::custom("Runtime Object dictionary match not found")); }
             }
-            // Choice
-            Some(("*", value)) => {
-                match value {
-                    InkDictionaryContent::String(target) => {
-                        let mut choice = ChoicePoint::new();
-
-                        match Path::parse(&target) {
-                            Some(path) => choice.set_path_on_choice(path),
-                            _ => return Err(SerdeError::custom("Cannot parse choice path"))
-                        }
-
-                        if let Some(("flg", flags)) = try!(map.next_entry()) {
-                            choice.set_flags(flags);
-                        }
-
-                        Ok(RuntimeObject::ChoicePoint(choice))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected choice path type"))
-                }
-            },
-
-            // Variable reference
-            Some(("VAR?", value)) => {
-                match value {
-                    InkDictionaryContent::String(name) => {
-                        Ok(RuntimeObject::VariableReference(VariableReference::new(name)))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected var name type"))
-                }
-            },
-            // Read Count
-            Some(("CNT?", value)) => {
-                match value {
-                    InkDictionaryContent::String(target) => {
-                        match Path::parse(&target) {
-                            Some(path) => Ok(RuntimeObject::ReadCount(ReadCount::new(path))),
-                            _ => return Err(SerdeError::custom("Cannot parse read count target"))
-                        }
-                    },
-                    _  => Err(SerdeError::custom("Unexpected var path type"))
-                }
-            },
-
-            // Variable assignment
-            Some(("VAR=", value)) => {
-                match value {
-                    InkDictionaryContent::String(name) => {
-                        if let Some(("re", re)) = try!(map.next_entry()) as Option<(&str, bool)> {
-                            return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, !re, true)))
-                        }
-
-                        Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, true, true)))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected var name type"))
-                }
-            },
-            Some(("temp=", value)) => {
-                match value {
-                    InkDictionaryContent::String(name) => {
-                        Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, true, false)))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected temp var name type"))
-                }
-            },
-
-            // Tag
-            Some(("#", value)) => {
-                match value {
-                    InkDictionaryContent::String(tag) => {
-                        Ok(RuntimeObject::Tag(Tag::new(tag)))
-                    },
-                    _  => Err(SerdeError::custom("Unexpected temp var name type"))
-                }
-            },
-
-            // List
-            Some(("list", value)) => { Err(SerdeError::custom("TODO")) },
-
-            _ => { Err(SerdeError::custom("TODO")) }
         }
+
+        if let Some(container) = opt_container {
+            return Ok(RuntimeObject::Container(container));
+        }
+
+        Err(SerdeError::custom("Runtime Object dictionary match not found"))
     }
 
     fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
         where
             V: SeqAccess<'de>,
     {
-        Err(SerdeError::custom("TODO"))
+        let mut runtimeObjects: Vec<RuntimeObject> = Vec::new();
+
+        let mut opt_child: Option<RuntimeObject> = seq.next_element()?;
+        while let Some(child) = opt_child {
+            opt_child = seq.next_element()?;
+
+            if opt_child.is_some() {
+                runtimeObjects.push(child);
+            }
+            else {
+                if let RuntimeObject::Container(mut container) = child {
+                    container.prepend(runtimeObjects);
+                    return Ok(RuntimeObject::Container(container))
+                }
+            }
+        }
+
+        Ok(RuntimeObject::Container(Container::fromRuntimeObjectVec(runtimeObjects)))
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: Error
+    {
+        Ok(RuntimeObject::Null)
     }
 }
 
@@ -382,7 +465,7 @@ impl<'de> Deserialize<'de> for RuntimeObject {
 struct InkJSon {
     #[serde(rename = "inkVersion")]
     ink_version: u32,
-    root: Vec<RuntimeObject>,
+    root: RuntimeObject,
     #[serde(rename = "listDefs")]
     list_defs: Option<BTreeMap<String,String>> // FIXME: listDefs is not a map<string,string>
 }
@@ -766,4 +849,99 @@ mod tests {
             _ => assert!(false)
         }
     }
+
+    #[test]
+    fn container_test() {
+        let json = "[\"^'Ah\",{\"->\":\"$r\",\"var\":true}, null]";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::Container(container) => {
+                let content = container.content();
+                assert_eq!(content.len(), 2);
+
+                match (content.get(0).unwrap()) {
+                    &RuntimeObject::Value(ref value) => {
+                        match (value) {
+                            &Value::String(ref str) => assert_eq!(str, "'Ah"),
+                            _ => assert!(false)
+                        }
+                    },
+                    _ => assert!(false)
+                }
+
+                match (content.get(1).unwrap()) {
+                    &RuntimeObject::Divert(ref divert) => {
+                        match divert.target().unwrap() {
+                            &TargetType::Name(ref target_name) => {
+                                assert_eq!(target_name, "$r");
+                            },
+                            _ => assert!(false)
+                        }
+
+                        assert_eq!(divert.stack_push_type(), &PushPopType::None);
+                        assert_eq!(divert.pushes_to_stack(), false);
+                        assert_eq!(divert.is_conditional(), false);
+                    },
+                    _ => assert!(false)
+                }
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn nested_container_test() {
+        let json = "[\"^test\",{\"subContainer\":[5,6,null],\"#f\":3,\"#n\":\"container\"}]";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::Container(container) => {
+                let content = container.content();
+                assert_eq!(content.len(), 2);
+                assert_eq!(container.name().unwrap(), "container");
+
+                match (content.get(0).unwrap()) {
+                    &RuntimeObject::Value(ref value) => {
+                        match (value) {
+                            &Value::String(ref str) => assert_eq!(str, "test"),
+                            _ => assert!(false)
+                        }
+                    },
+                    _ => assert!(false)
+                }
+
+                match (content.get(1).unwrap()) {
+                    &RuntimeObject::Container(ref sub_container) => {
+                        let sub_content = sub_container.content();
+                        assert_eq!(content.len(), 2);
+                        assert_eq!(sub_container.name().unwrap(), "subContainer");
+
+                        match sub_content.get(0).unwrap() {
+                            &RuntimeObject::Value(ref value) => match value {
+                                &Value::Int(int_value) => assert_eq!(int_value, 5),
+                                _ => assert!(false)
+                            },
+                            _ => assert!(false)
+                        }
+
+                        match sub_content.get(1).unwrap() {
+                            &RuntimeObject::Value(ref value) => match value {
+                                &Value::Int(int_value) => assert_eq!(int_value, 6),
+                                _ => assert!(false)
+                            },
+                            _ => assert!(false)
+                        }
+                    },
+                    _ => assert!(false)
+                }
+            },
+            _ => assert!(false)
+        }
+    }
+
+    /*#[test]
+    fn ink_test() {
+        let json = r###"{"inkVersion":17,"root":[[["^I looked at Monsieur Fogg","\n",["ev",{"^->":"0.g-0.2.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^... and I could contain myself no longer.",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'What is the purpose of our journey, Monsieur?'","\n","^'A wager,' he replied.","\n",[["ev",{"^->":"0.g-0.2.c.12.0.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A wager!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^ I returned.","\n","\n","^He nodded.","\n",[["ev",{"^->":"0.g-0.2.c.12.0.c.11.0.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'But surely that is foolishness!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.0.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.1.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A most serious matter then!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.1.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],{"g-0":["^He nodded again.","\n",["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.2.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'But can we win?'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.2.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'That is what we will endeavour to find out,' he answered.","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.3.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A modest wager, I trust?'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.3.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'Twenty thousand pounds,' he replied, quite flatly.","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.4.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","str","^.","/str","/ev",{"*":".^.c","flg":22},{"s":["^I asked nothing further of him then",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.4.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^, and after a final, polite cough, he offered nothing more to me. ","<>","\n","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],null]}],{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.1.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","str","^.'","/str","/ev",{"*":".^.c","flg":22},{"s":["^'Ah",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.1.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^,' I replied, uncertain what I thought.","\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],{"g-0":["^After that, ","<>","\n",{"->":"0.g-1"},null]}],{"#f":5}]}],["ev",{"^->":"0.g-0.3.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^... but I said nothing",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.3.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^ and ","<>","\n","\n",{"->":"0.g-1"},{"#f":5}]}],{"#n":"g-0"}],{"g-1":["^we passed the day in silence.","\n",["end",{"#n":"g-2"}],null]}],"done",{"#f":3}],"listDefs":{}}"###;
+        let inkObject: InkJSon = serde_json::from_str(json).unwrap();
+        assert_eq!(inkObject.ink_version, 17)
+    }*/
 }
