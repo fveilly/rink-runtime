@@ -21,7 +21,7 @@ impl Container {
         }
     }
 
-    pub fn fromRuntimeObjectVec(content: Vec<RuntimeObject>) -> Container {
+    pub fn from_runtime_object_vec(content: Vec<RuntimeObject>) -> Container {
         Container {
             content: content,
             name: None,

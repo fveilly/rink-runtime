@@ -2,7 +2,6 @@ use serde_json;
 
 use std::fmt;
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::error::Error;
 
 use runtime::RuntimeObject;
@@ -174,10 +173,31 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
         while let Some((key, value)) = map.next_entry()? as Option<(&str, InkDictionaryContent)> {
             match key {
                 // Divert target value to path
-                "^->" => { return Err(SerdeError::custom("TODO")) },
+                "^->" => {
+                    match value {
+                        InkDictionaryContent::String(target) => {
+                            match Path::parse(&target) {
+                                Some(path) => return Ok(RuntimeObject::Value(Value::DivertTarget(path))),
+                                _ => return Err(SerdeError::custom("Cannot parse target path"))
+                            }
+                        }
+                        _ => return Err(SerdeError::custom("Unexpected divert target value type"))
+                    }
+                },
 
                 // VariablePointerValue
-                "^var" => { return Err(SerdeError::custom("TODO")) },
+                "^var" => {
+                    match value {
+                        InkDictionaryContent::String(name) => {
+                            let mut context_index = -1;
+                            if let Some(("ci", value)) = map.next_entry()? as Option<(&str, i32)> {
+                                context_index = value;
+                            }
+                            return Ok(RuntimeObject::Value(Value::VariablePointer(name, context_index)))
+                        },
+                        _ => return Err(SerdeError::custom("Unexpected divert target value type"))
+                    }
+                },
 
                 // Divert
                 "->" => {
@@ -210,7 +230,7 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                             }
                             return Ok(RuntimeObject::Divert(divert))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected divert target type"))
+                        _ => return Err(SerdeError::custom("Unexpected divert target [->] type"))
                     }
                 },
                 // Function Call
@@ -407,8 +427,6 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                         _ => return Err(SerdeError::custom("Unexpected container name type"))
                     }
                 },
-
-                _ => { return Err(SerdeError::custom("Runtime Object dictionary match not found")); }
             }
         }
 
@@ -423,24 +441,24 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
         where
             V: SeqAccess<'de>,
     {
-        let mut runtimeObjects: Vec<RuntimeObject> = Vec::new();
+        let mut runtime_objects: Vec<RuntimeObject> = Vec::new();
 
         let mut opt_child: Option<RuntimeObject> = seq.next_element()?;
         while let Some(child) = opt_child {
             opt_child = seq.next_element()?;
 
             if opt_child.is_some() {
-                runtimeObjects.push(child);
+                runtime_objects.push(child);
             }
             else {
                 if let RuntimeObject::Container(mut container) = child {
-                    container.prepend(runtimeObjects);
+                    container.prepend(runtime_objects);
                     return Ok(RuntimeObject::Container(container))
                 }
             }
         }
 
-        Ok(RuntimeObject::Container(Container::fromRuntimeObjectVec(runtimeObjects)))
+        Ok(RuntimeObject::Container(Container::from_runtime_object_vec(runtime_objects)))
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>
@@ -469,21 +487,6 @@ struct InkJSon {
     #[serde(rename = "listDefs")]
     list_defs: Option<BTreeMap<String,String>> // FIXME: listDefs is not a map<string,string>
 }
-
-
-pub fn typed_example() -> Result<(), Box<Error>> {
-    let mut file = File::open("/home/midgard/dev/rink-runtime/tests/simple4.ink.json")?;
-
-    // Parse the string of data into a Person object. This is exactly the
-    // same function as the one that produced serde_json::Value above, but
-    // now we are asking it for a Person as output.
-    let json: InkJSon = serde_json::from_reader(file)?;
-
-    // Do things just like with any other Rust data structure.
-    println!("Ink version {}", json.ink_version);
-    Ok(())
-}
-
 
 #[cfg(test)]
 mod tests {
@@ -522,6 +525,35 @@ mod tests {
         match runtime_objects.get(0).unwrap() {
             &RuntimeObject::Value(ref value) => match value {
                 &Value::String(ref string_value) => assert_eq!(string_value, "I looked at Monsieur Fogg"),
+                _ => assert!(false)
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn value_divert_target_test() {
+        let json = "{\"^->\":\"0.g-0.2.$r1\"}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::Value(ref value) => match value {
+                &Value::DivertTarget(ref path) => assert_eq!(path.to_string(), "0.g-0.2.$r1"),
+                _ => assert!(false)
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn value_variable_pointer_test() {
+        let json = "{\"^var\": \"varname\", \"ci\": 0}";
+        let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
+        match runtime_object {
+            RuntimeObject::Value(value) => match value {
+                Value::VariablePointer(name, context_index) => {
+                    assert_eq!(name, "varname");
+                    assert_eq!(context_index, 0);
+                },
                 _ => assert!(false)
             },
             _ => assert!(false)
@@ -859,9 +891,9 @@ mod tests {
                 let content = container.content();
                 assert_eq!(content.len(), 2);
 
-                match (content.get(0).unwrap()) {
+                match content.get(0).unwrap() {
                     &RuntimeObject::Value(ref value) => {
-                        match (value) {
+                        match value {
                             &Value::String(ref str) => assert_eq!(str, "'Ah"),
                             _ => assert!(false)
                         }
@@ -869,7 +901,7 @@ mod tests {
                     _ => assert!(false)
                 }
 
-                match (content.get(1).unwrap()) {
+                match content.get(1).unwrap() {
                     &RuntimeObject::Divert(ref divert) => {
                         match divert.target().unwrap() {
                             &TargetType::Name(ref target_name) => {
@@ -899,9 +931,9 @@ mod tests {
                 assert_eq!(content.len(), 2);
                 assert_eq!(container.name().unwrap(), "container");
 
-                match (content.get(0).unwrap()) {
+                match content.get(0).unwrap() {
                     &RuntimeObject::Value(ref value) => {
-                        match (value) {
+                        match value {
                             &Value::String(ref str) => assert_eq!(str, "test"),
                             _ => assert!(false)
                         }
@@ -909,7 +941,7 @@ mod tests {
                     _ => assert!(false)
                 }
 
-                match (content.get(1).unwrap()) {
+                match content.get(1).unwrap() {
                     &RuntimeObject::Container(ref sub_container) => {
                         let sub_content = sub_container.content();
                         assert_eq!(content.len(), 2);

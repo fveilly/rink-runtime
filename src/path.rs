@@ -1,8 +1,7 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-#[derive(Clone)]
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum Component {
     Index(IndexComponent),
     Named(NamedComponent)
@@ -41,7 +40,7 @@ impl fmt::Display for Component {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NamedComponent {
     name: String
 }
@@ -74,7 +73,7 @@ impl NamedComponent {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IndexComponent {
     index: usize
 }
@@ -103,6 +102,7 @@ impl IndexComponent {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Path {
     components: Vec<Component>,
     is_relative: bool
