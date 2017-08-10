@@ -1,8 +1,10 @@
-use serde_json;
-
-use std::fmt;
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::fmt;
+use std::io::Read;
+
+use error::InkError;
+use path::Path;
 
 use runtime::RuntimeObject;
 use runtime::value::Value;
@@ -13,10 +15,11 @@ use runtime::choice_point::ChoicePoint;
 use runtime::variable::{VariableAssignment, VariableReference, ReadCount};
 use runtime::tag::Tag;
 use runtime::container::Container;
-use path::Path;
 
 use serde::de::Error as SerdeError;
 use serde::de::{Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
+
+use serde_json;
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -486,6 +489,25 @@ struct InkJSon {
     root: RuntimeObject,
     #[serde(rename = "listDefs")]
     list_defs: Option<BTreeMap<String,String>> // FIXME: listDefs is not a map<string,string>
+}
+
+impl InkJSon {
+    pub fn from_str(s: &str) -> Result<InkJSon, InkError>
+    {
+        serde_json::from_str(s).map_err(|e| InkError::from(e))
+    }
+
+    pub fn from_slice(v: &[u8]) -> Result<InkJSon, InkError>
+    {
+        serde_json::from_slice(v).map_err(|e| InkError::from(e))
+    }
+
+    pub fn from_reader<R>(rdr: R) -> Result<InkJSon, InkError>
+        where
+            R: Read
+    {
+        serde_json::from_reader(rdr).map_err(|e| InkError::from(e))
+    }
 }
 
 #[cfg(test)]
@@ -973,7 +995,7 @@ mod tests {
     #[test]
     fn ink_test() {
         let json = r###"{"inkVersion":17,"root":[[["^I looked at Monsieur Fogg","\n",["ev",{"^->":"0.g-0.2.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^... and I could contain myself no longer.",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'What is the purpose of our journey, Monsieur?'","\n","^'A wager,' he replied.","\n",[["ev",{"^->":"0.g-0.2.c.12.0.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A wager!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^ I returned.","\n","\n","^He nodded.","\n",[["ev",{"^->":"0.g-0.2.c.12.0.c.11.0.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'But surely that is foolishness!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.0.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.1.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A most serious matter then!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.1.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],{"g-0":["^He nodded again.","\n",["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.2.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'But can we win?'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.2.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'That is what we will endeavour to find out,' he answered.","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.3.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A modest wager, I trust?'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.3.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'Twenty thousand pounds,' he replied, quite flatly.","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.4.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","str","^.","/str","/ev",{"*":".^.c","flg":22},{"s":["^I asked nothing further of him then",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.4.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^, and after a final, polite cough, he offered nothing more to me. ","<>","\n","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],null]}],{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.1.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","str","^.'","/str","/ev",{"*":".^.c","flg":22},{"s":["^'Ah",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.1.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^,' I replied, uncertain what I thought.","\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],{"g-0":["^After that, ","<>","\n",{"->":"0.g-1"},null]}],{"#f":5}]}],["ev",{"^->":"0.g-0.3.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^... but I said nothing",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.3.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^ and ","<>","\n","\n",{"->":"0.g-1"},{"#f":5}]}],{"#n":"g-0"}],{"g-1":["^we passed the day in silence.","\n",["end",{"#n":"g-2"}],null]}],"done",{"#f":3}],"listDefs":{}}"###;
-        let inkObject: InkJSon = serde_json::from_str(json).unwrap();
+        let inkObject: InkJSon = InkJSon::from_str(json).unwrap();
         assert_eq!(inkObject.ink_version, 17)
     }
 }
