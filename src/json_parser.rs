@@ -21,15 +21,6 @@ use serde::de::{Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 
 use serde_json;
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum InkDictionaryContent {
-    String(String),
-    Integer(u32),
-    Bool(bool),
-    RuntimeObject(RuntimeObject)
-}
-
 struct RuntimeObjectVisitor {
 }
 
@@ -171,14 +162,14 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
         where
             A: MapAccess<'de>,
     {
-        let mut opt_container: Option<Container> = None;
-
-        while let Some((key, value)) = map.next_entry()? as Option<(&str, InkDictionaryContent)> {
+        let mut opt_key : Option<&str> = map.next_key()?;
+        if let &Some(key) = &opt_key {
             match key {
                 // Divert target value to path
                 "^->" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(target) => {
+                        Some(target) => {
                             match Path::parse(&target) {
                                 Some(path) => return Ok(RuntimeObject::Value(Value::DivertTarget(path))),
                                 _ => return Err(SerdeError::custom("Cannot parse target path"))
@@ -190,29 +181,31 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
 
                 // VariablePointerValue
                 "^var" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(name) => {
+                        Some(name) => {
                             let mut context_index = -1;
                             if let Some(("ci", value)) = map.next_entry()? as Option<(&str, i32)> {
                                 context_index = value;
                             }
-                            return Ok(RuntimeObject::Value(Value::VariablePointer(name, context_index)))
+                            return Ok(RuntimeObject::Value(Value::VariablePointer(name.to_owned(), context_index)))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected divert target value type"))
+                        _ => return Err(SerdeError::custom("Unexpected variable pointer value type"))
                     }
                 },
 
                 // Divert
                 "->" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(target) => {
+                        Some(target) => {
                             let mut divert = Divert::new();
 
                             let entry: Option<(&str, bool)> = map.next_entry()?;
                             match entry {
                                 // Case {"->": "variableTarget", "var": true}
                                 Some(("var", true)) => {
-                                    divert.set_target(TargetType::Name(target));
+                                    divert.set_target(TargetType::Name(target.to_owned()));
 
                                     // Case {"->": "variableTarget", "var": true, "c": true}
                                     if let Some(("c", true)) = map.next_entry()? {
@@ -222,7 +215,7 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                                 _ => {
                                     match Path::parse(&target) {
                                         Some(path) => divert.set_target(TargetType::Path(path)),
-                                        _ => return Err(SerdeError::custom("Cannot parse target path"))
+                                        _ => return Err(SerdeError::custom("Cannot parse divert target path"))
                                     }
 
                                     // Case {"->": "variableTarget", "c": true}
@@ -233,13 +226,15 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                             }
                             return Ok(RuntimeObject::Divert(divert))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected divert target [->] type"))
+                        _ => return Err(SerdeError::custom("Unexpected divert type"))
                     }
                 },
+
                 // Function Call
                 "f()" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(target) => {
+                        Some(target) => {
                             let mut divert = Divert::new_function();
 
                             match Path::parse(&target) {
@@ -254,13 +249,15 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
 
                             return Ok(RuntimeObject::Divert(divert))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected divert target type"))
+                        _ => return Err(SerdeError::custom("Unexpected function call type"))
                     }
                 },
+
                 // Tunnel
                 "->t->" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(target) => {
+                        Some(target) => {
                             let mut divert = Divert::new_tunnel();
 
                             match Path::parse(&target) {
@@ -275,13 +272,15 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
 
                             return Ok(RuntimeObject::Divert(divert))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected divert target type"))
+                        _ => return Err(SerdeError::custom("Unexpected tunnel type"))
                     }
                 },
+
                 // External function
                 "x()" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(target) => {
+                        Some(target) => {
                             let mut divert = Divert::new_external_function();
 
                             match Path::parse(&target) {
@@ -301,13 +300,15 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
 
                             return Ok(RuntimeObject::Divert(divert))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected divert target type"))
+                        _ => return Err(SerdeError::custom("Unexpected external function type"))
                     }
-                }
+                },
+
                 // Choice
                 "*" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(target) => {
+                        Some(target) => {
                             let mut choice = ChoicePoint::new();
 
                             match Path::parse(&target) {
@@ -321,59 +322,67 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
 
                             return Ok(RuntimeObject::ChoicePoint(choice))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected choice path type"))
+                        _ => return Err(SerdeError::custom("Unexpected choice type"))
                     }
                 },
 
                 // Variable reference
                 "VAR?" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(name) => {
-                            return Ok(RuntimeObject::VariableReference(VariableReference::new(name)))
+                        Some(name) => {
+                            return Ok(RuntimeObject::VariableReference(VariableReference::new(name.to_owned())))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected var name type"))
+                        _ => return Err(SerdeError::custom("Unexpected variable reference type"))
                     }
                 },
+
                 // Read Count
                 "CNT?" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(target) => {
+                        Some(target) => {
                             match Path::parse(&target) {
                                 Some(path) => return Ok(RuntimeObject::ReadCount(ReadCount::new(path))),
                                 _ => return Err(SerdeError::custom("Cannot parse read count target"))
                             }
                         },
-                        _ => return Err(SerdeError::custom("Unexpected var path type"))
+                        _ => return Err(SerdeError::custom("Unexpected read count type"))
                     }
                 },
 
                 // Variable assignment
                 "VAR=" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(name) => {
+                        Some(name) => {
                             if let Some(("re", re)) = map.next_entry()? as Option<(&str, bool)> {
-                                return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, !re, true)))
+                                return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name.to_owned(), !re, true)))
                             }
 
-                            return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, true, true)))
+                            return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name.to_owned(), true, true)))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected var name type"))
+                        _ => return Err(SerdeError::custom("Unexpected variable assignment type"))
                     }
                 },
+
+                // Temporary variable
                 "temp=" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(name) => {
-                            return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name, true, false)))
+                        Some(name) => {
+                            return Ok(RuntimeObject::VariableAssignment(VariableAssignment::new(name.to_owned(), true, false)))
                         },
-                        _ => return Err(SerdeError::custom("Unexpected temp var name type"))
+                        _ => return Err(SerdeError::custom("Unexpected temporary variable type"))
                     }
                 },
 
                 // Tag
                 "#" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(tag) => {
-                            return Ok(RuntimeObject::Tag(Tag::new(tag)))
+                        Some(tag) => {
+                            return Ok(RuntimeObject::Tag(Tag::new(tag.to_owned())))
                         },
                         _ => return Err(SerdeError::custom("Unexpected temp var name type"))
                     }
@@ -382,38 +391,53 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                 // List
                 "list" => { return Err(SerdeError::custom("TODO")) },
 
-                // Container
+                _ => {}
+            }
+        }
+
+        let mut opt_container: Option<Container> = None;
+
+        while let Some(key) = opt_key {
+            match key {
+                // Container name
                 "#n" => {
+                    let value: Option<&str> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::String(name) => {
+                        Some(name) => {
                             if opt_container.is_none() {
                                 opt_container = Some(Container::new());
                             }
 
                             if let Some(ref mut container_ref) = opt_container.as_mut() {
-                                container_ref.set_name(name);
+                                container_ref.set_name(name.to_owned());
                             }
                         },
                         _ => return Err(SerdeError::custom("Unexpected container name type"))
                     }
                 },
+
+                // Container flags
                 "#f" => {
+                    let value: Option<u8> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::Integer(flags) => {
+                        Some(flags) => {
                             if opt_container.is_none() {
                                 opt_container = Some(Container::new());
                             }
 
                             if let Some(ref mut container_ref) = opt_container.as_mut() {
-                                container_ref.set_count_flags(flags as u8);
+                                container_ref.set_count_flags(flags);
                             }
                         },
-                        _ => return Err(SerdeError::custom("Unexpected container name type"))
+                        _ => return Err(SerdeError::custom("Unexpected container flags type"))
                     }
                 },
-                key => {
+
+                // Sub-container
+                _ => {
+                    let value: Option<RuntimeObject> = map.next_value()?;
                     match value {
-                        InkDictionaryContent::RuntimeObject(obj) => {
+                        Some(obj) => {
                             if let RuntimeObject::Container(mut sub_container) = obj
                                 {
                                     if opt_container.is_none() {
@@ -427,10 +451,12 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                                     }
                                 }
                         },
-                        _ => return Err(SerdeError::custom("Unexpected container name type"))
+                        _ => return Err(SerdeError::custom("Unexpected sub-container type"))
                     }
                 },
             }
+
+            opt_key = map.next_key()?;
         }
 
         if let Some(container) = opt_container {
