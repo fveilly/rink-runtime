@@ -1,4 +1,4 @@
-use path::Component as PathComponent;
+use path::Path;
 use runtime::RuntimeObject;
 use runtime::RuntimeNamedObject;
 
@@ -117,7 +117,7 @@ impl Container {
         self.content = objects;
     }
 
-    pub fn get_content_from_path_component(&self, component: &PathComponent)-> Option<&RuntimeObject> {
+    /*pub fn get_content_from_path_component(&self, component: &PathComponent)-> Option<&RuntimeObject> {
         match component {
             &PathComponent::Index(ref index_component) => {
                 let index = index_component.index();
@@ -139,6 +139,11 @@ impl Container {
                 }
             }
         }
+    }*/
+
+    pub fn resolve_path(path: &Path) -> Option<RuntimeObject> {
+        // TODO
+        None
     }
 }
 
