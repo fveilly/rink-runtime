@@ -1,6 +1,5 @@
-use path::Path;
+use path::{Path, Fragment};
 use runtime::RuntimeObject;
-use runtime::RuntimeNamedObject;
 
 pub struct Container {
     content: Vec<RuntimeObject>,
@@ -141,24 +140,15 @@ impl Container {
         }
     }*/
 
-    pub fn resolve_path(path: &Path) -> Option<RuntimeObject> {
-        // TODO
+    pub fn search_by_name(&self, name: &str) -> Option<&RuntimeObject> {
+        for runtime_object in &self.content {
+            if let Some(other_name) = runtime_object.name() {
+                if name == other_name {
+                    return Some(runtime_object)
+                }
+            }
+        }
+
         None
-    }
-}
-
-impl RuntimeNamedObject for Container {
-    fn name(&self) -> Option<&String> {
-        match self.name {
-            Some(ref name) => Some(name),
-            _ => None
-        }
-    }
-
-    fn has_valid_name(&self) -> bool {
-        match self.name {
-            Some(ref name) => name.is_empty(),
-            _ => false
-        }
     }
 }
