@@ -1,6 +1,6 @@
 use path::Path;
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum PushPopType {
     Tunnel,
     Function,
