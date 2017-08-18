@@ -320,7 +320,7 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                                 choice.set_flags(flags);
                             }
 
-                            return Ok(RuntimeObject::ChoicePoint(choice))
+                            return Ok(RuntimeObject::Choice(choice))
                         },
                         _ => return Err(SerdeError::custom("Unexpected choice type"))
                     }
@@ -840,7 +840,7 @@ mod tests {
         let json = "{\"*\":\".^.c\",\"flg\":18}";
         let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
         match runtime_object {
-            RuntimeObject::ChoicePoint(choice) => {
+            RuntimeObject::Choice(choice) => {
                 assert_eq!(choice.path_on_choice().unwrap().to_string(), ".^.c");
                 assert_eq!(choice.has_condition(), false);
                 assert_eq!(choice.has_start_content(), true);

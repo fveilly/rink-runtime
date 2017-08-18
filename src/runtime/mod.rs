@@ -1,4 +1,3 @@
-pub mod choice;
 pub mod choice_point;
 pub mod container;
 pub mod control_command;
@@ -11,7 +10,6 @@ pub mod variable;
 
 use std::fmt;
 
-use runtime::choice::Choice;
 use runtime::choice_point::ChoicePoint;
 use runtime::container::Container;
 use runtime::control_command::ControlCommand;
@@ -26,8 +24,7 @@ use debug_metadata::DebugMetadata;
 use path::Path;
 
 pub enum RuntimeObject {
-    Choice(Choice),
-    ChoicePoint(ChoicePoint),
+    Choice(ChoicePoint),
     Container(Container),
     ControlCommand(ControlCommand),
     Divert(Divert),

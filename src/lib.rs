@@ -4,12 +4,12 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 
-//mod json_parser;
-mod json_parser;
 mod callstack;
+mod choice;
 mod debug_metadata;
 mod error;
 mod ink_list;
+mod json_parser;
 mod path;
 mod runtime;
 mod runtime_graph;
