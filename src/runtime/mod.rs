@@ -9,6 +9,7 @@ pub mod value;
 pub mod variable;
 
 use std::fmt;
+use std::rc::Rc;
 
 use runtime::choice_point::ChoicePoint;
 use runtime::container::Container;
@@ -25,7 +26,7 @@ use path::Path;
 
 pub enum RuntimeObject {
     Choice(ChoicePoint),
-    Container(Container),
+    Container(Rc<Container>),
     ControlCommand(ControlCommand),
     Divert(Divert),
     Glue(Glue),

@@ -2,14 +2,14 @@ use runtime::choice_point::ChoicePoint;
 use callstack::Thread;
 use path::Path;
 
-pub struct Choice<'ru> {
+pub struct Choice {
     text: Option<String>,
-    choice_point: &'ru ChoicePoint,
-    thread: Thread<'ru>
+    choice_point: ChoicePoint,
+    thread: Thread
 }
 
-impl<'ru> Choice<'ru> {
-    pub fn from_choice_point(&self, choice_point: &'ru ChoicePoint, thread: Thread<'ru>) -> Choice<'ru> {
+impl Choice {
+    pub fn from_choice_point(&self, choice_point: ChoicePoint, thread: Thread) -> Choice {
         Choice {
             text: None,
             choice_point: choice_point,

@@ -1,16 +1,21 @@
 use path::{Path, Fragment};
 use runtime::container::Container;
 use runtime::RuntimeObject;
+use std::rc::Rc;
 
-struct RuntimeGraph {
-    root_container: Container
+pub struct RuntimeGraph {
+    root_container: Rc<Container>
 }
 
 impl RuntimeGraph {
-    pub fn new(container: Container) -> RuntimeGraph {
+    pub fn new(container: Rc<Container>) -> RuntimeGraph {
         RuntimeGraph {
             root_container: container
         }
+    }
+
+    pub fn root_container(&self) -> &Rc<Container> {
+        &self.root_container
     }
 
     pub fn resolve_path(&self, path: &Path) -> Option<&RuntimeObject> {
@@ -71,11 +76,11 @@ mod tests {
         let mut child_level_3 = Container::new();
         child_level_3.set_name("c".to_owned());
 
-        child_level_2.add_child(RuntimeObject::Container(child_level_3));
-        child_level_1.add_child(RuntimeObject::Container(child_level_2));
-        root_container.add_child(RuntimeObject::Container(child_level_1));
+        child_level_2.add_child(RuntimeObject::Container(Rc::new(child_level_3)));
+        child_level_1.add_child(RuntimeObject::Container(Rc::new(child_level_2)));
+        root_container.add_child(RuntimeObject::Container(Rc::new((child_level_1))));
 
-        let graph = RuntimeGraph::new(root_container);
+        let graph = RuntimeGraph::new(Rc::new(root_container));
 
         match graph.resolve_path(&path.unwrap()) {
             Some(&RuntimeObject::Container(ref container)) => {
@@ -105,12 +110,12 @@ mod tests {
         let mut child_level_3_2 = Divert::new();
         child_level_3_2.set_target(TargetType::Name("mytarget".to_owned()));
 
-        child_level_2.add_child(RuntimeObject::Container(child_level_3_1));
+        child_level_2.add_child(RuntimeObject::Container(Rc::new(child_level_3_1)));
         child_level_2.add_child(RuntimeObject::Divert(child_level_3_2));
-        child_level_1.add_child(RuntimeObject::Container(child_level_2));
-        root_container.add_child(RuntimeObject::Container(child_level_1));
+        child_level_1.add_child(RuntimeObject::Container(Rc::new(child_level_2)));
+        root_container.add_child(RuntimeObject::Container(Rc::new(child_level_1)));
 
-        let graph = RuntimeGraph::new(root_container);
+        let graph = RuntimeGraph::new(Rc::new(root_container));
 
         match graph.resolve_path(&path.unwrap()) {
             Some(&RuntimeObject::Divert(ref divert)) => {

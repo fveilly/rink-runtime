@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::io::Read;
+use std::rc::Rc;
 
 use error::InkError;
 use path::Path;
@@ -438,16 +439,19 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                     let value: Option<RuntimeObject> = map.next_value()?;
                     match value {
                         Some(obj) => {
-                            if let RuntimeObject::Container(mut sub_container) = obj
+                            if let RuntimeObject::Container(mut sub_container_rc) = obj
                                 {
                                     if opt_container.is_none() {
                                         opt_container = Some(Container::new());
                                     }
 
-                                    sub_container.set_name(key.to_owned());
+                                    match Rc::get_mut(&mut sub_container_rc) {
+                                        Some(sub_container) => sub_container.set_name(key.to_owned()),
+                                        _ => return Err(SerdeError::custom("Fail to get mutable sub-container"))
+                                    }
 
                                     if let Some(ref mut container_ref) = opt_container.as_mut() {
-                                        container_ref.add_child(RuntimeObject::Container(sub_container));
+                                        container_ref.add_child(RuntimeObject::Container(sub_container_rc));
                                     }
                                 }
                         },
@@ -460,7 +464,7 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
         }
 
         if let Some(container) = opt_container {
-            return Ok(RuntimeObject::Container(container));
+            return Ok(RuntimeObject::Container(Rc::new(container)));
         }
 
         Err(SerdeError::custom("Runtime Object dictionary match not found"))
@@ -480,14 +484,18 @@ impl<'de> Visitor<'de> for RuntimeObjectVisitor
                 runtime_objects.push(child);
             }
             else {
-                if let RuntimeObject::Container(mut container) = child {
-                    container.prepend(runtime_objects);
-                    return Ok(RuntimeObject::Container(container))
+                if let RuntimeObject::Container(mut container_rc) = child {
+                    match Rc::get_mut(&mut container_rc) {
+                        Some(container) => container.prepend(runtime_objects),
+                        _ => return Err(SerdeError::custom("Fail to get mutable container"))
+                    }
+
+                    return Ok(RuntimeObject::Container(container_rc))
                 }
             }
         }
 
-        Ok(RuntimeObject::Container(Container::from_runtime_object_vec(runtime_objects)))
+        Ok(RuntimeObject::Container(Rc::new(Container::from_runtime_object_vec(runtime_objects))))
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>

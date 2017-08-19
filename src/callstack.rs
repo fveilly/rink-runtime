@@ -3,18 +3,19 @@ use runtime::divert::PushPopType;
 use runtime::RuntimeObject;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Clone)]
-pub struct Element<'ru> {
-    container: &'ru Container,
+pub struct Element {
+    container: Rc<Container>,
     index: usize,
     in_expression_evaluation: bool,
     /*temporary_variables: HashMap<String, RuntimeObject>,*/
     stack_push_type: PushPopType
 }
 
-impl<'ru> Element<'ru> {
-    pub fn new(stack_push_type: PushPopType, container: &'ru Container, index: usize) -> Element<'ru> {
+impl Element {
+    pub fn new(stack_push_type: PushPopType, container: Rc<Container>, index: usize) -> Element {
         Element {
             container: container,
             index: index,
@@ -35,7 +36,7 @@ impl<'ru> Element<'ru> {
         self.in_expression_evaluation
     }
 
-    pub fn set_container(&mut self, container: &'ru Container) {
+    pub fn set_container(&mut self, container: Rc<Container>) {
         self.container = container;
     }
 
@@ -43,7 +44,7 @@ impl<'ru> Element<'ru> {
         self.index = index;
     }
 
-    pub fn set_runtime_object(&mut self, container: &'ru Container, index: usize) {
+    pub fn set_runtime_object(&mut self, container: Rc<Container>, index: usize) {
         self.container = container;
         self.index = index;
     }
@@ -54,31 +55,31 @@ impl<'ru> Element<'ru> {
 }
 
 #[derive(Clone)]
-pub struct Thread<'ru> {
-    stack: Vec<Element<'ru>>
+pub struct Thread {
+    stack: Vec<Element>
 }
 
-impl<'ru> Thread<'ru> {
-    pub fn new() -> Thread<'ru> {
+impl<'ru> Thread {
+    pub fn new() -> Thread {
         Thread {
             stack: Vec::new()
         }
     }
 
-    pub fn stack(&self) -> &Vec<Element<'ru>> {
+    pub fn stack(&self) -> &Vec<Element> {
         &self.stack
     }
 
-    pub fn push(&mut self, element: Element<'ru>) {
+    pub fn push(&mut self, element: Element) {
         self.stack.push(element);
     }
 
-    pub fn pop(&mut self) -> Option<Element<'ru>> {
+    pub fn pop(&mut self) -> Option<Element> {
         self.stack.pop()
     }
 
-    pub fn pop_if<F>(&mut self, f: F) -> Option<Element<'ru>>
-        where F: FnOnce(&Element<'ru>) -> bool {
+    pub fn pop_if<F>(&mut self, f: F) -> Option<Element>
+        where F: FnOnce(&Element) -> bool {
         let mut should_pop = match self.stack.last() {
             Some(element) => f(element),
             _ => false
@@ -96,12 +97,12 @@ impl<'ru> Thread<'ru> {
 }
 
 #[derive(Clone)]
-pub struct CallStack<'ru> {
-    threads: Vec<Thread<'ru>>
+pub struct CallStack {
+    threads: Vec<Thread>
 }
 
-impl<'ru> CallStack<'ru> {
-    pub fn new(root_container: &'ru Container) -> CallStack<'ru> {
+impl<'ru> CallStack {
+    pub fn new(root_container: Rc<Container>) -> CallStack {
         let mut threads = Vec::new();
         let mut thread = Thread::new();
 
@@ -113,15 +114,15 @@ impl<'ru> CallStack<'ru> {
         }
     }
 
-    pub fn current_thread(&self) -> Option<&Thread<'ru>> {
+    pub fn current_thread(&self) -> Option<&Thread> {
         self.threads.last()
     }
 
-    pub fn current_stack(&self) -> Option<&Vec<Element<'ru>>> {
+    pub fn current_stack(&self) -> Option<&Vec<Element>> {
         self.current_thread().map(|thread| thread.stack())
     }
 
-    pub fn current_element(&self) -> Option<&Element<'ru>> {
+    pub fn current_element(&self) -> Option<&Element> {
         self.current_stack().and_then(|stack| stack.last())
     }
 
@@ -132,7 +133,7 @@ impl<'ru> CallStack<'ru> {
         }
     }
 
-    pub fn get_thread(&self, index: usize) -> Option<&Thread<'ru>> {
+    pub fn get_thread(&self, index: usize) -> Option<&Thread> {
         self.threads.get(index)
     }
 
