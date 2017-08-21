@@ -126,6 +126,13 @@ impl<'ru> CallStack {
         self.current_stack().and_then(|stack| stack.last())
     }
 
+    pub fn current_runtime_object(&self) -> Option<&RuntimeObject> {
+        match self.current_element() {
+            Some(element) => element.current_runtime_object(),
+            _ => None
+        }
+    }
+
     pub fn depth(&self) -> usize {
         match self.current_stack() {
             Some(stack) => stack.len(),
@@ -151,5 +158,10 @@ impl<'ru> CallStack {
             Some(_) => true,
             _ => false
         }
+    }
+
+    pub fn reset(&mut self, thread: Thread) {
+        self.threads.clear();
+        self.threads.push(thread);
     }
 }

@@ -517,7 +517,7 @@ impl<'de> Deserialize<'de> for RuntimeObject {
 }
 
 #[derive(Deserialize)]
-struct InkJSon {
+pub struct InkJSon {
     #[serde(rename = "inkVersion")]
     ink_version: u32,
     root: RuntimeObject,
@@ -541,6 +541,10 @@ impl InkJSon {
             R: Read
     {
         serde_json::from_reader(rdr).map_err(|e| InkError::from(e))
+    }
+
+    pub fn take(self) -> (u32, RuntimeObject, Option<BTreeMap<String,String>>) {
+        (self.ink_version, self.root, self.list_defs)
     }
 }
 

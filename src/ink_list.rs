@@ -1,5 +1,4 @@
 use std::fmt;
-use std::fmt::Error;
 use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
 

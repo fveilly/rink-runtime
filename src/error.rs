@@ -19,7 +19,7 @@ pub struct InkError {
 }
 
 impl InkError {
-    fn new(code: InkErrorCode) -> Self {
+    pub fn new(code: InkErrorCode) -> Self {
         InkError {
             code: code
         }
