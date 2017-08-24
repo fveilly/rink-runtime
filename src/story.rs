@@ -1,6 +1,6 @@
 use choice::Choice;
 use error::{InkError, InkErrorCode};
-use json_parser::InkJSon;
+use json_parser::RuntimeGraphBuilder;
 use runtime_graph::RuntimeGraph;
 use story_state::StoryState;
 
@@ -22,35 +22,27 @@ enum StoryFlow<'a> {
 
 impl Story {
     pub fn from_str(s: &str) -> Result<Story, InkError> {
-        Story::new( InkJSon::from_str(s)?)
+        Story::new( RuntimeGraphBuilder::from_str(s)?)
     }
 
     pub fn from_slice(v: &[u8]) -> Result<Story, InkError> {
-        Story::new( InkJSon::from_slice(v)?)
+        Story::new( RuntimeGraphBuilder::from_slice(v)?)
     }
 
     pub fn from_reader<R>(rdr: R) -> Result<Story, InkError>
         where
             R: Read {
-        Story::new( InkJSon::from_reader(rdr)?)
+        Story::new( RuntimeGraphBuilder::from_reader(rdr)?)
     }
 
-    fn new(ink_json: InkJSon) -> Result<Story, InkError> {
-        let (ink_version, root, list_defs) = ink_json.take();
-
-        if ink_version > InkVersion {
+    fn new(runtime_graph: RuntimeGraph) -> Result<Story, InkError> {
+        if runtime_graph.ink_version() > InkVersion {
             return Err(InkError::new(InkErrorCode::Message("Version of ink used to build story is newer than the current version of the engine".to_owned())));
         }
-        else if ink_version < InkVersionMinimumCompatible {
+        else if runtime_graph.ink_version() < InkVersionMinimumCompatible {
             return Err(InkError::new(InkErrorCode::Message("Version of ink used to build story is too old to be loaded by this version of the engine".to_owned())));
         }
 
-        let root_container = match root.as_container() {
-            Some(container) => Ok(container),
-            _ => Err(InkError::new(InkErrorCode::Message("Invalid root container, expected array of runtime objects".to_owned())))
-        }?;
-
-        let runtime_graph = RuntimeGraph::new(root_container);
         let state = StoryState::new(&runtime_graph);
 
         Ok(Story {

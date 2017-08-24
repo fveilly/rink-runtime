@@ -16,11 +16,69 @@ use runtime::choice_point::ChoicePoint;
 use runtime::variable::{VariableAssignment, VariableReference, ReadCount};
 use runtime::tag::Tag;
 use runtime::container::Container;
+use runtime_graph::RuntimeGraph;
 
 use serde::de::Error as SerdeError;
 use serde::de::{Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 
 use serde_json;
+
+struct RuntimeGraphVisitor {
+}
+
+impl RuntimeGraphVisitor {
+    fn new() -> Self {
+        RuntimeGraphVisitor {}
+    }
+}
+
+impl<'de> Visitor<'de> for RuntimeGraphVisitor
+{
+    // Our Visitor is going to produce a RuntimeGraph.
+    type Value = RuntimeGraph;
+
+    // Format a message stating what data this Visitor expects to receive.
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("Runtime graph")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+    {
+        let ink_version = match map.next_entry()? as Option<(&str, u32)> {
+            Some(("inkVersion", value)) => Some(value) ,
+            _ => None
+        }.ok_or(SerdeError::custom("Invalid runtime graph format, expected inkVersion"))?;
+
+        let container = match map.next_entry()? as Option<(&str, RuntimeObject)> {
+            Some(("root", value)) => {
+                match value {
+                    RuntimeObject::Container(container) => Some(container),
+                    _ => None
+                }
+            },
+            _ => None
+        }.ok_or(SerdeError::custom("Invalid runtime graph format, expected root"))?;
+
+        let list_defs = match map.next_entry()? as Option<(&str, ListDefinitions)> {
+            Some(("listDefs", value)) => Some(value),
+            _ => None
+        }.ok_or(SerdeError::custom("Invalid runtime graph format, expected listDefs"))?;
+
+        Ok(RuntimeGraph::new(ink_version, container))
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeGraph {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        // Instantiate our Visitor and ask the Deserializer to drive
+        // it over the input data, resulting in an instance of RuntimeGraph.
+        deserializer.deserialize_map(RuntimeGraphVisitor::new())
+    }
+}
 
 struct RuntimeObjectVisitor {
 }
@@ -516,35 +574,65 @@ impl<'de> Deserialize<'de> for RuntimeObject {
     }
 }
 
-#[derive(Deserialize)]
-pub struct InkJSon {
-    #[serde(rename = "inkVersion")]
-    ink_version: u32,
-    root: RuntimeObject,
-    #[serde(rename = "listDefs")]
-    list_defs: Option<BTreeMap<String,String>> // FIXME: listDefs is not a map<string,string>
+// TODO
+struct ListDefinitions {
 }
 
-impl InkJSon {
-    pub fn from_str(s: &str) -> Result<InkJSon, InkError>
+struct ListDefinitionsVisitor {
+}
+
+impl ListDefinitionsVisitor {
+    fn new() -> Self {
+        ListDefinitionsVisitor {}
+    }
+}
+
+impl<'de> Visitor<'de> for ListDefinitionsVisitor
+{
+    // Our Visitor is going to produce a RuntimeGraph.
+    type Value = ListDefinitions;
+
+    // Format a message stating what data this Visitor expects to receive.
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("List definitions")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+    {
+        Ok(ListDefinitions{})
+    }
+}
+
+impl<'de> Deserialize<'de> for ListDefinitions {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        // Instantiate our Visitor and ask the Deserializer to drive
+        // it over the input data, resulting in an instance of ListDefinitions.
+        deserializer.deserialize_map(ListDefinitionsVisitor::new())
+    }
+}
+
+pub struct RuntimeGraphBuilder {}
+
+impl RuntimeGraphBuilder {
+    pub fn from_str(s: &str) -> Result<RuntimeGraph, InkError>
     {
         serde_json::from_str(s).map_err(|e| InkError::from(e))
     }
 
-    pub fn from_slice(v: &[u8]) -> Result<InkJSon, InkError>
+    pub fn from_slice(v: &[u8]) -> Result<RuntimeGraph, InkError>
     {
         serde_json::from_slice(v).map_err(|e| InkError::from(e))
     }
 
-    pub fn from_reader<R>(rdr: R) -> Result<InkJSon, InkError>
+    pub fn from_reader<R>(rdr: R) -> Result<RuntimeGraph, InkError>
         where
             R: Read
     {
         serde_json::from_reader(rdr).map_err(|e| InkError::from(e))
-    }
-
-    pub fn take(self) -> (u32, RuntimeObject, Option<BTreeMap<String,String>>) {
-        (self.ink_version, self.root, self.list_defs)
     }
 }
 
@@ -948,10 +1036,9 @@ mod tests {
         let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
         match runtime_object {
             RuntimeObject::Container(container) => {
-                let content = container.content();
-                assert_eq!(content.len(), 2);
+                assert_eq!(container.len(), 2);
 
-                match content.get(0).unwrap() {
+                match container.get(0).unwrap() {
                     &RuntimeObject::Value(ref value) => {
                         match value {
                             &Value::String(ref str) => assert_eq!(str, "'Ah"),
@@ -961,7 +1048,7 @@ mod tests {
                     _ => assert!(false)
                 }
 
-                match content.get(1).unwrap() {
+                match container.get(1).unwrap() {
                     &RuntimeObject::Divert(ref divert) => {
                         match divert.target().unwrap() {
                             &TargetType::Name(ref target_name) => {
@@ -987,11 +1074,10 @@ mod tests {
         let runtime_object: RuntimeObject = serde_json::from_str(json).unwrap();
         match runtime_object {
             RuntimeObject::Container(container) => {
-                let content = container.content();
-                assert_eq!(content.len(), 2);
+                assert_eq!(container.len(), 2);
                 assert_eq!(container.name().unwrap(), "container");
 
-                match content.get(0).unwrap() {
+                match container.get(0).unwrap() {
                     &RuntimeObject::Value(ref value) => {
                         match value {
                             &Value::String(ref str) => assert_eq!(str, "test"),
@@ -1001,13 +1087,12 @@ mod tests {
                     _ => assert!(false)
                 }
 
-                match content.get(1).unwrap() {
+                match container.get(1).unwrap() {
                     &RuntimeObject::Container(ref sub_container) => {
-                        let sub_content = sub_container.content();
-                        assert_eq!(content.len(), 2);
+                        assert_eq!(sub_container.len(), 2);
                         assert_eq!(sub_container.name().unwrap(), "subContainer");
 
-                        match sub_content.get(0).unwrap() {
+                        match sub_container.get(0).unwrap() {
                             &RuntimeObject::Value(ref value) => match value {
                                 &Value::Int(int_value) => assert_eq!(int_value, 5),
                                 _ => assert!(false)
@@ -1015,7 +1100,7 @@ mod tests {
                             _ => assert!(false)
                         }
 
-                        match sub_content.get(1).unwrap() {
+                        match sub_container.get(1).unwrap() {
                             &RuntimeObject::Value(ref value) => match value {
                                 &Value::Int(int_value) => assert_eq!(int_value, 6),
                                 _ => assert!(false)
@@ -1031,10 +1116,10 @@ mod tests {
     }
 
     #[test]
-    fn ink_test() {
+    fn runtime_grahp_test() {
         let json = r###"{"inkVersion":17,"root":[[["^I looked at Monsieur Fogg","\n",["ev",{"^->":"0.g-0.2.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^... and I could contain myself no longer.",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'What is the purpose of our journey, Monsieur?'","\n","^'A wager,' he replied.","\n",[["ev",{"^->":"0.g-0.2.c.12.0.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A wager!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^ I returned.","\n","\n","^He nodded.","\n",[["ev",{"^->":"0.g-0.2.c.12.0.c.11.0.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'But surely that is foolishness!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.0.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.1.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A most serious matter then!'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.1.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],{"g-0":["^He nodded again.","\n",["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.2.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'But can we win?'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.2.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'That is what we will endeavour to find out,' he answered.","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.3.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^'A modest wager, I trust?'",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.3.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"\n","\n","^'Twenty thousand pounds,' he replied, quite flatly.","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.4.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","str","^.","/str","/ev",{"*":".^.c","flg":22},{"s":["^I asked nothing further of him then",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.0.c.11.g-0.4.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^, and after a final, polite cough, he offered nothing more to me. ","<>","\n","\n",{"->":"0.g-0.2.c.12.g-0"},{"#f":5}]}],null]}],{"#f":5}]}],["ev",{"^->":"0.g-0.2.c.12.1.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","str","^.'","/str","/ev",{"*":".^.c","flg":22},{"s":["^'Ah",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.2.c.12.1.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^,' I replied, uncertain what I thought.","\n","\n",{"->":".^.^.^.g-0"},{"#f":5}]}],{"g-0":["^After that, ","<>","\n",{"->":"0.g-1"},null]}],{"#f":5}]}],["ev",{"^->":"0.g-0.3.$r1"},{"temp=":"$r"},"str",{"->":".^.s"},[{"#n":"$r1"}],"/str","/ev",{"*":".^.c","flg":18},{"s":["^... but I said nothing",{"->":"$r","var":true},null],"c":["ev",{"^->":"0.g-0.3.c.$r2"},"/ev",{"temp=":"$r"},{"->":".^.^.s"},[{"#n":"$r2"}],"^ and ","<>","\n","\n",{"->":"0.g-1"},{"#f":5}]}],{"#n":"g-0"}],{"g-1":["^we passed the day in silence.","\n",["end",{"#n":"g-2"}],null]}],"done",{"#f":3}],"listDefs":{}}"###;
-        let inkObject: InkJSon = InkJSon::from_str(json).unwrap();
-        assert_eq!(inkObject.ink_version, 17)
+        let runtime_graph: RuntimeGraph = RuntimeGraphBuilder::from_str(json).unwrap();
+        assert_eq!(runtime_graph.ink_version(), 17)
     }
 
     // FIXME: For now serde MapAccess::next_value() for &str fail when deserializing from a reader

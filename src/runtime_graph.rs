@@ -4,14 +4,20 @@ use runtime::RuntimeObject;
 use std::rc::Rc;
 
 pub struct RuntimeGraph {
+    ink_version: u32,
     root_container: Rc<Container>
 }
 
 impl RuntimeGraph {
-    pub fn new(container: Rc<Container>) -> RuntimeGraph {
+    pub fn new(ink_version: u32, container: Rc<Container>) -> RuntimeGraph {
         RuntimeGraph {
+            ink_version: ink_version,
             root_container: container
         }
+    }
+
+    pub fn ink_version(&self) -> u32 {
+        self.ink_version
     }
 
     pub fn root_container(&self) -> &Rc<Container> {
@@ -26,7 +32,7 @@ impl RuntimeGraph {
         while let Some(fragment) = it.next() {
             match fragment {
                 &Fragment::Index(index) => {
-                    match current_container.content().get(index) {
+                    match current_container.get(index) {
                         Some(child) => {
                             if let &RuntimeObject::Container(ref container) = child {
                                 current_container = container;
@@ -80,7 +86,7 @@ mod tests {
         child_level_1.add_child(RuntimeObject::Container(Rc::new(child_level_2)));
         root_container.add_child(RuntimeObject::Container(Rc::new((child_level_1))));
 
-        let graph = RuntimeGraph::new(Rc::new(root_container));
+        let graph = RuntimeGraph::new(17, Rc::new(root_container));
 
         match graph.resolve_path(&path.unwrap()) {
             Some(&RuntimeObject::Container(ref container)) => {
@@ -115,7 +121,7 @@ mod tests {
         child_level_1.add_child(RuntimeObject::Container(Rc::new(child_level_2)));
         root_container.add_child(RuntimeObject::Container(Rc::new(child_level_1)));
 
-        let graph = RuntimeGraph::new(Rc::new(root_container));
+        let graph = RuntimeGraph::new(17,Rc::new(root_container));
 
         match graph.resolve_path(&path.unwrap()) {
             Some(&RuntimeObject::Divert(ref divert)) => {

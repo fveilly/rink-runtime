@@ -30,8 +30,16 @@ impl Container {
         }
     }
 
-    pub fn content(&self) -> &Vec<RuntimeObject> {
-        &self.content
+    pub fn get(&self, index: usize) -> Option<&RuntimeObject> {
+        self.content.get(index)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.content.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.content.len()
     }
 
     pub fn visits_should_be_counted(&self) -> bool {
