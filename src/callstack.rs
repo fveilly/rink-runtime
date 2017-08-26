@@ -25,7 +25,7 @@ impl Element {
     }
 
     pub fn current_runtime_object(&self) -> Option<&RuntimeObject> {
-        self.container.content().get(self.index)
+        self.container.get(self.index)
     }
 
     pub fn stack_push_type(&self) -> PushPopType {
