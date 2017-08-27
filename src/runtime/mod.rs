@@ -50,9 +50,23 @@ impl fmt::Display for RuntimeObject {
 }
 
 impl RuntimeObject {
-    pub fn as_container(self) -> Option<Rc<Container>> {
+    pub fn is_container(&self) -> bool {
         match self {
-            RuntimeObject::Container(container) => Some(container),
+            &RuntimeObject::Container(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn as_container(&self) -> Option<&Rc<Container>> {
+        match self {
+            &RuntimeObject::Container(ref container) => Some(container),
+            _ => None,
+        }
+    }
+
+    pub fn as_value(&self) -> Option<&Value> {
+        match self {
+            &RuntimeObject::Value(ref value) => Some(value),
             _ => None,
         }
     }

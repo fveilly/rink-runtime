@@ -12,6 +12,29 @@ pub enum Value {
     VariablePointer(String, i32)
 }
 
+impl Value {
+    pub fn as_int(&self) -> Option<i32> {
+        match self {
+            &Value::Int(value) => Some(value),
+            _ => None
+        }
+    }
+
+    pub fn as_float(&self) -> Option<f32> {
+        match self {
+            &Value::Float(value) => Some(value),
+            _ => None
+        }
+    }
+
+    pub fn as_string(&self) -> Option<&str> {
+        match self {
+            &Value::String(ref value) => Some(value),
+            _ => None
+        }
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
