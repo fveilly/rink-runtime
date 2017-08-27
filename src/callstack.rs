@@ -1,62 +1,15 @@
 use runtime::container::Container;
 use runtime::divert::PushPopType;
 use runtime::RuntimeObject;
+use runtime_context::RuntimeContext;
+use macros;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Clone)]
-pub struct Element {
-    container: Rc<Container>,
-    index: usize,
-    in_expression_evaluation: bool,
-    /*temporary_variables: HashMap<String, RuntimeObject>,*/
-    stack_push_type: PushPopType
-}
-
-impl Element {
-    pub fn new(stack_push_type: PushPopType, container: Rc<Container>, index: usize) -> Element {
-        Element {
-            container: container,
-            index: index,
-            stack_push_type: stack_push_type,
-            in_expression_evaluation: false
-        }
-    }
-
-    pub fn current_runtime_object(&self) -> Option<&RuntimeObject> {
-        self.container.get(self.index)
-    }
-
-    pub fn stack_push_type(&self) -> PushPopType {
-        self.stack_push_type
-    }
-
-    pub fn in_expression_evaluation(&self) -> bool {
-        self.in_expression_evaluation
-    }
-
-    pub fn set_container(&mut self, container: Rc<Container>) {
-        self.container = container;
-    }
-
-    pub fn set_index(&mut self, index: usize) {
-        self.index = index;
-    }
-
-    pub fn set_runtime_object(&mut self, container: Rc<Container>, index: usize) {
-        self.container = container;
-        self.index = index;
-    }
-
-    pub fn set_in_expression_evaluation(&mut self, in_expression_evaluation: bool) {
-        self.in_expression_evaluation = in_expression_evaluation;
-    }
-}
-
-#[derive(Clone)]
 pub struct Thread {
-    stack: Vec<Element>
+    stack: Vec<RuntimeContext>
 }
 
 impl<'ru> Thread {
@@ -66,22 +19,22 @@ impl<'ru> Thread {
         }
     }
 
-    pub fn stack(&self) -> &Vec<Element> {
+    pub fn stack(&self) -> &Vec<RuntimeContext> {
         &self.stack
     }
 
-    pub fn push(&mut self, element: Element) {
-        self.stack.push(element);
+    pub fn push(&mut self, runtime_context: RuntimeContext) {
+        self.stack.push(runtime_context);
     }
 
-    pub fn pop(&mut self) -> Option<Element> {
+    pub fn pop(&mut self) -> Option<RuntimeContext> {
         self.stack.pop()
     }
 
-    pub fn pop_if<F>(&mut self, f: F) -> Option<Element>
-        where F: FnOnce(&Element) -> bool {
+    pub fn pop_if<F>(&mut self, f: F) -> Option<RuntimeContext>
+        where F: FnOnce(&RuntimeContext) -> bool {
         let mut should_pop = match self.stack.last() {
-            Some(element) => f(element),
+            Some(runtime_context) => f(runtime_context),
             _ => false
         };
 
@@ -102,11 +55,11 @@ pub struct CallStack {
 }
 
 impl<'ru> CallStack {
-    pub fn new(root_container: Rc<Container>) -> CallStack {
+    pub fn new(root_container: &Rc<Container>) -> CallStack {
         let mut threads = Vec::new();
         let mut thread = Thread::new();
 
-        thread.push(Element::new(PushPopType::Tunnel, root_container, 0));
+        thread.push(RuntimeContext::new(root_container));
         threads.push(thread);
 
         CallStack {
@@ -114,33 +67,33 @@ impl<'ru> CallStack {
         }
     }
 
-    pub fn current_thread(&self) -> Option<&Thread> {
+    pub fn thread(&self) -> Option<&Thread> {
         self.threads.last()
     }
 
-    pub fn current_stack(&self) -> Option<&Vec<Element>> {
-        self.current_thread().map(|thread| thread.stack())
+    pub fn stack(&self) -> Option<&Vec<RuntimeContext>> {
+        self.thread().map(|thread| thread.stack())
     }
 
-    pub fn current_element(&self) -> Option<&Element> {
-        self.current_stack().and_then(|stack| stack.last())
+    pub fn runtime_context(&self) -> Option<&RuntimeContext> {
+        self.stack().and_then(|stack| stack.last())
     }
 
-    pub fn current_runtime_object(&self) -> Option<&RuntimeObject> {
-        match self.current_element() {
-            Some(element) => element.current_runtime_object(),
+    pub fn runtime_object(&self) -> Option<&RuntimeObject> {
+        match self.runtime_context() {
+            Some(runtime_context) => runtime_context.get(),
             _ => None
         }
     }
 
     pub fn depth(&self) -> usize {
-        match self.current_stack() {
+        match self.stack() {
             Some(stack) => stack.len(),
             _ => 0
         }
     }
 
-    pub fn get_thread(&self, index: usize) -> Option<&Thread> {
+    pub fn thread_from_index(&self, index: usize) -> Option<&Thread> {
         self.threads.get(index)
     }
 

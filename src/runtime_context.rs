@@ -1,9 +1,11 @@
-use runtime::container::Container;
 use runtime::RuntimeObject;
-use std::rc::Rc;
-
+use runtime::container::Container;
+use runtime::divert::PushPopType;
 use macros;
 
+use std::rc::Rc;
+
+#[derive(Clone)]
 struct Element {
     container: Rc<Container>,
     index: usize
@@ -44,15 +46,20 @@ impl Element {
     }
 }
 
+#[derive(Clone)]
 pub struct RuntimeContext {
-    stack: Vec<Element>
+    stack: Vec<Element>,
+    in_expression_evaluation: bool,
+    stack_push_type: PushPopType
 }
 
 /// Depth-first search (pre-order) of the runtime graph implemented as a LIFO stack.
 impl RuntimeContext {
     pub fn new(container: &Rc<Container>) -> RuntimeContext {
         RuntimeContext {
-            stack: vec![Element::new(container.clone())]
+            stack: vec![Element::new(container.clone())],
+            in_expression_evaluation: false,
+            stack_push_type: PushPopType::Tunnel
         }
     }
 
@@ -61,12 +68,30 @@ impl RuntimeContext {
         stack.push(Element::new(container.clone()));
 
         RuntimeContext {
-            stack: stack
+            stack: stack,
+            in_expression_evaluation: false,
+            stack_push_type: PushPopType::Tunnel
         }
     }
 
     pub fn depth(&self) -> usize {
         self.stack.len()
+    }
+
+    pub fn in_expression_evaluation(&self) -> bool {
+        self.in_expression_evaluation
+    }
+
+    pub fn set_in_expression_evaluation(&mut self, in_expression_evaluation: bool) {
+        self.in_expression_evaluation = in_expression_evaluation;
+    }
+
+    pub fn stack_push_type(&self) -> PushPopType {
+        self.stack_push_type
+    }
+
+    pub fn set_stack_push_type(&mut self, stack_push_type: PushPopType) {
+        self.stack_push_type = stack_push_type;
     }
 
     pub fn reset(&mut self, container: &Rc<Container>, index: usize) {
